@@ -2,6 +2,7 @@ import pygame
 from craps.engine.dice import roll_dice
 from craps.engine.game import CrapsEngine
 from craps.ui.board import WINDOW_SIZE, DICE_AREA_CENTER, draw_board, draw_puck
+from craps.ui.dice_view import draw_die
 
 DIE_SIZE = 60
 DIE_GAP = 16
@@ -11,7 +12,6 @@ screen = pygame.display.set_mode(WINDOW_SIZE)
 pygame.display.set_caption("Craps")
 
 label_font = pygame.font.Font(None, 30)
-dice_font = pygame.font.Font(None, 48)
 outcome_font = pygame.font.Font(None, 40)
 puck_font = pygame.font.Font(None, 18)
 
@@ -38,10 +38,8 @@ while running:
     draw_board(screen, label_font)
     draw_puck(screen, puck_font, engine.point)
 
-    for rect, value in ((die1_rect, dice_values[0]), (die2_rect, dice_values[1])):
-        pygame.draw.rect(screen, (255, 255, 255), rect)
-        text = dice_font.render(str(value), True, (0, 0, 0))
-        screen.blit(text, text.get_rect(center=rect.center))
+    draw_die(screen, die1_rect, dice_values[0])
+    draw_die(screen, die2_rect, dice_values[1])
 
     if last_result is not None:
         result_text = outcome_font.render(last_result.outcome.value, True, (255, 255, 255))
