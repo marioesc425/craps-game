@@ -15,7 +15,6 @@ pygame.init()
 screen = pygame.display.set_mode(WINDOW_SIZE)
 pygame.display.set_caption("Craps")
 
-label_font = pygame.font.Font(None, 30)
 outcome_font = pygame.font.Font(None, 40)
 puck_font = pygame.font.Font(None, 18)
 hud_fonts = make_hud_fonts()
@@ -63,7 +62,7 @@ while running:
                     # Keep the chosen amount within what the player can afford.
                     pending_bet = max(MIN_BET, min(player.bankroll, pending_bet))
 
-    draw_board(screen, label_font)
+    draw_board(screen)
     draw_puck(screen, puck_font, engine.point)
 
     bet_locked = player.current_bet is not None

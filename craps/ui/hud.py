@@ -7,15 +7,14 @@ from typing import NamedTuple
 
 import pygame
 
-PANEL_RECT = pygame.Rect(1008, 60, 150, 190)
-PANEL_COLOR = (8, 70, 40)
-LINE_COLOR = (240, 230, 200)
-GOLD = (230, 190, 70)
+PANEL_RECT = pygame.Rect(1020, 610, 340, 115)
+PANEL_COLOR = (0, 90, 30)
 WHITE = (255, 255, 255)
-ERROR_COLOR = (255, 140, 120)
+GOLD = (255, 214, 0)
+ERROR_COLOR = (255, 190, 170)
 
-HINT_CENTER = (600, 330)
-ERROR_CENTER = (600, 505)
+HINT_CENTER = (575, 482)
+ERROR_CENTER = (575, 452)
 
 
 class HudFonts(NamedTuple):
@@ -40,20 +39,25 @@ def draw_hud(screen, fonts, bankroll, bet, bet_locked, error):
     False while the player is still choosing an amount (betting phase).
     """
     pygame.draw.rect(screen, PANEL_COLOR, PANEL_RECT)
-    pygame.draw.rect(screen, LINE_COLOR, PANEL_RECT, 3)
+    pygame.draw.rect(screen, WHITE, PANEL_RECT, 3)
+    pygame.draw.line(
+        screen, WHITE,
+        (PANEL_RECT.centerx, PANEL_RECT.top + 14), (PANEL_RECT.centerx, PANEL_RECT.bottom - 14), 2,
+    )
 
-    x = PANEL_RECT.centerx
+    left_x = PANEL_RECT.left + PANEL_RECT.width // 4
+    right_x = PANEL_RECT.left + 3 * PANEL_RECT.width // 4
     top = PANEL_RECT.top
     bet_label = "ON PASS LINE" if bet_locked else "NEXT BET"
     bet_color = GOLD if bet_locked else WHITE
 
-    _blit_centered(screen, fonts.label, "BANKROLL", LINE_COLOR, (x, top + 32))
-    _blit_centered(screen, fonts.value, f"${bankroll:.2f}", WHITE, (x, top + 62))
-    _blit_centered(screen, fonts.label, bet_label, LINE_COLOR, (x, top + 118))
-    _blit_centered(screen, fonts.value, f"${bet:.2f}", bet_color, (x, top + 148))
+    _blit_centered(screen, fonts.label, "BANKROLL", WHITE, (left_x, top + 34))
+    _blit_centered(screen, fonts.value, f"${bankroll:.2f}", WHITE, (left_x, top + 72))
+    _blit_centered(screen, fonts.label, bet_label, WHITE, (right_x, top + 34))
+    _blit_centered(screen, fonts.value, f"${bet:.2f}", bet_color, (right_x, top + 72))
 
     hint = "SPACE: roll the dice" if bet_locked else "UP / DOWN: change bet     ENTER: place bet"
-    _blit_centered(screen, fonts.hint, hint, LINE_COLOR, HINT_CENTER)
+    _blit_centered(screen, fonts.hint, hint, WHITE, HINT_CENTER)
 
     if error:
         _blit_centered(screen, fonts.hint, error, ERROR_COLOR, ERROR_CENTER)
