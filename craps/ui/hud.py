@@ -7,14 +7,14 @@ from typing import NamedTuple
 
 import pygame
 
-PANEL_RECT = pygame.Rect(1020, 610, 340, 115)
+PANEL_RECT = pygame.Rect(44, 592, 520, 96)
 PANEL_COLOR = (0, 90, 30)
 WHITE = (255, 255, 255)
 GOLD = (255, 214, 0)
 ERROR_COLOR = (255, 190, 170)
 
-HINT_CENTER = (575, 482)
-ERROR_CENTER = (575, 452)
+HINT_CENTER = (1158, 238)
+ERROR_CENTER = (1158, 205)
 
 
 class HudFonts(NamedTuple):
@@ -42,7 +42,7 @@ def draw_hud(screen, fonts, bankroll, bet, bet_locked, error):
     pygame.draw.rect(screen, WHITE, PANEL_RECT, 3)
     pygame.draw.line(
         screen, WHITE,
-        (PANEL_RECT.centerx, PANEL_RECT.top + 14), (PANEL_RECT.centerx, PANEL_RECT.bottom - 14), 2,
+        (PANEL_RECT.centerx, PANEL_RECT.top + 12), (PANEL_RECT.centerx, PANEL_RECT.bottom - 12), 2,
     )
 
     left_x = PANEL_RECT.left + PANEL_RECT.width // 4
@@ -51,10 +51,10 @@ def draw_hud(screen, fonts, bankroll, bet, bet_locked, error):
     bet_label = "ON PASS LINE" if bet_locked else "NEXT BET"
     bet_color = GOLD if bet_locked else WHITE
 
-    _blit_centered(screen, fonts.label, "BANKROLL", WHITE, (left_x, top + 34))
-    _blit_centered(screen, fonts.value, f"${bankroll:.2f}", WHITE, (left_x, top + 72))
-    _blit_centered(screen, fonts.label, bet_label, WHITE, (right_x, top + 34))
-    _blit_centered(screen, fonts.value, f"${bet:.2f}", bet_color, (right_x, top + 72))
+    _blit_centered(screen, fonts.label, "BANKROLL", WHITE, (left_x, top + 28))
+    _blit_centered(screen, fonts.value, f"${bankroll:.2f}", WHITE, (left_x, top + 62))
+    _blit_centered(screen, fonts.label, bet_label, WHITE, (right_x, top + 28))
+    _blit_centered(screen, fonts.value, f"${bet:.2f}", bet_color, (right_x, top + 62))
 
     hint = "SPACE: roll the dice" if bet_locked else "UP / DOWN: change bet     ENTER: place bet"
     _blit_centered(screen, fonts.hint, hint, WHITE, HINT_CENTER)
