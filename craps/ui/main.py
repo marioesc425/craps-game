@@ -10,6 +10,8 @@ from craps.ui.hud import draw_hud, make_hud_fonts
 DIE_SIZE = 60
 DIE_GAP = 16
 BET_STEP = 5
+ROLL_MS = 800   # how long the dice tumble before the result is revealed
+TUMBLE_MS = 80  # how often the tumbling faces change
 
 pygame.init()
 screen = pygame.display.set_mode(WINDOW_SIZE)
@@ -29,6 +31,10 @@ pending_bet = MIN_BET
 dice_values = roll_dice()
 last_result = None
 
+roll_started = None  # None means the dice are not tumbling
+final_dice = None    # the real roll, kept hidden until the reveal
+last_tumble_step = None  # which TUMBLE_MS period the faces last changed on
+
 # Dice sit side by side, centered on the open middle of the table.
 center_x, center_y = DICE_AREA_CENTER
 die1_rect = pygame.Rect(0, 0, DIE_SIZE, DIE_SIZE)
@@ -37,6 +43,9 @@ die1_rect.center = (center_x - (DIE_SIZE + DIE_GAP) // 2, center_y)
 die2_rect.center = (center_x + (DIE_SIZE + DIE_GAP) // 2, center_y)
 
 running = True
+
+clock = pygame.time.Clock()
+
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -54,13 +63,30 @@ while running:
                     except InvalidBetError as e:
                         error = str(e)
             else:                                   # rolling phase
-                if event.key == pygame.K_SPACE:
-                    dice_values = roll_dice()
-                    # Resolve first: settle() clears the bet when the round ends.
-                    last_result = engine.resolve_roll(sum(dice_values), player.current_bet)
-                    player.settle(last_result)
-                    # Keep the chosen amount within what the player can afford.
-                    pending_bet = max(MIN_BET, min(player.bankroll, pending_bet))
+                if event.key == pygame.K_SPACE and roll_started is None:
+                    roll_started = pygame.time.get_ticks()
+                    last_tumble_step = None
+                    final_dice = roll_dice()
+                    last_result = None  # don't leave the old outcome up while tumbling
+
+    # Runs once per frame, not once per event: time passing is not an event.
+    if roll_started is not None:
+        elapsed = pygame.time.get_ticks() - roll_started
+        if elapsed >= ROLL_MS:
+            # Reveal: only now do the real roll, the puck, and the bankroll change.
+            dice_values = final_dice
+            # Resolve first: settle() clears the bet when the round ends.
+            last_result = engine.resolve_roll(sum(dice_values), player.current_bet)
+            player.settle(last_result)
+            # Keep the chosen amount within what the player can afford.
+            pending_bet = max(MIN_BET, min(player.bankroll, pending_bet))
+            roll_started = None
+        else:
+            # Tumbling: swap in a fake roll, but only when a new period starts.
+            step = elapsed // TUMBLE_MS
+            if step != last_tumble_step:
+                last_tumble_step = step
+                dice_values = roll_dice()
 
     draw_board(screen)
     draw_puck(screen, puck_font, engine.point)
@@ -77,5 +103,6 @@ while running:
         screen.blit(result_text, result_text.get_rect(center=(center_x, center_y + 70)))
 
     pygame.display.flip()
+    clock.tick(60)
 
 pygame.quit()
