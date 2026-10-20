@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: golden-rail-craps
+    runtime: python
+    plan: free
+    buildCommand: pip install -r web/requirements.txt
+    startCommand: uvicorn web.server:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health

@@ -54,3 +54,15 @@ Run the rules and interaction suite with:
 ```sh
 ./venv/bin/python -m unittest discover -s tests
 ```
+
+## Play together online
+
+The browser version is served by a small FastAPI WebSocket server. To run it locally:
+
+```sh
+python3 -m venv web-venv  # optional; the existing venv can also be used
+./web-venv/bin/python -m pip install -r web/requirements.txt
+./web-venv/bin/uvicorn web.server:app --reload
+```
+
+Open `http://127.0.0.1:8000`, create a table, then share its invite link. Players join the same room with separate bankrolls. The shooter keeps rolling until the hand ends, then the shooter role rotates. For a free Render deployment, connect this GitHub repository and deploy the included `render.yaml` Blueprint. The free service may take about a minute to wake after inactivity, and active rooms reset when its in-memory server restarts. The browser game uses play chips and does not require an account.
