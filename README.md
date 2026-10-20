@@ -1,10 +1,34 @@
-# Craps — The Golden Rail
+# The Golden Rail — Craps
 
-A Pygame craps table with direct on-table betting for Pass Line, Don't Pass, Come, Don't Come, Place, Field, Hardway, and line-bet odds.
+A playable craps game built with Python and Pygame. The table is the interface: choose a chip, click a printed betting area, and roll. The project combines a rules and bankroll engine with a casino-style, responsive table UI.
+
+## What it does
+
+- Implements Pass Line, Don't Pass, Come, Don't Come, Field, Place 4/5/6/8/9/10, Hard 4/6/8/10, and odds on eligible line bets.
+- Enforces come-out and point phases, wager limits, exact whole-dollar payout amounts, and bankroll accounting.
+- Shows wagers as chip stacks on their corresponding table areas. Click a stack to add to that wager or, when eligible, add odds to that specific bet.
+- Provides chip selection, hover feedback, recent-roll status, undo before the next roll, and a roll animation.
+- Resizes the table while preserving the layout.
+
+## How it was built
+
+I built the original game engine and core flow through Pass Line and Field bets. I then used AI assistance to help with the casino-style table design and UI, and to finish the remaining bet types, payout and settlement cases, and interaction details. The rules engine remains separate from the Pygame presentation so that wager resolution and bankroll behavior can be tested independently.
+
+## Project structure
+
+- `craps/engine/` — bet types, dice, game phase and roll history, wager validation, payout calculation, and bankroll settlement.
+- `craps/ui/board.py` — table artwork and the geometry for its betting areas.
+- `craps/ui/betting.py` — direct hit-testing against that same table geometry, wager placement helpers, and on-table chip stacks.
+- `craps/ui/main.py` — Pygame event loop, controls, status display, and dice animation.
+- `tests/` — deterministic tests for dice, game flow, bet rules, payouts, and table betting interactions.
+
+## Rules and defaults
+
+The game starts with a $100 bankroll and uses a $5 minimum base bet. Place payouts follow common craps payouts: 9:5 on 4/10, 7:5 on 5/9, and 7:6 on 6/8. A $6 chip is included so Place 6 and Place 8 can pay in whole dollars. Odds are capped at 3× the base wager by default. Field 2 pays 2:1 by default (the engine also supports 3:1), and Don't Pass/Don't Come 12 pushes by default. These values are configured in the engine and can be adjusted in code.
 
 ## Run
 
-From the project root, install Python 3.11+ and Pygame 2.6.1, then run:
+Requires Python 3.11+ and Pygame 2.6.1. From the repository root:
 
 ```sh
 python3 -m venv venv  # skip if the project's venv already exists
@@ -12,15 +36,20 @@ python3 -m venv venv  # skip if the project's venv already exists
 ./venv/bin/python -m craps.ui.main
 ```
 
-## Play
+## Controls
 
-Choose a chip from the tray at the upper right (mouse click or **1–6**), then click a printed betting area. The board areas map to Pass Line, Don't Pass, Come, Don't Come, Field, Place 4/5/6/8/9/10, and Hard 4/6/8/10. The $6 chip lets Place 6 and Place 8 pay exactly in whole dollars. Click a wager's on-table chip stack to add the selected amount to it; after its number is established, the same click adds odds to that specific line wager. Chip stacks show the base amount and odds separately.
+- Select a chip in the tray or use **1–6**.
+- Click a betting area to place the selected chip.
+- Click a wager's chip stack to add to it; after a number is established, that stack can also receive odds.
+- Click **Roll Dice** or press **Space** to roll.
+- Click **Undo Chip** or press **Z** to refund the latest wager change since the last roll.
+- Press **R** to reset the game and **Escape** to quit.
 
-Click **Roll Dice** or press **Space** when wagers are active. **Undo Chip** or **Z** refunds the most recent wager change made since the last roll. Use **R** to start a fresh game and **Escape** to quit. Hover a betting zone to see its valid-phase highlight; invalid clicks show a brief status message.
+Invalid wagers show a status message and do not charge the bankroll. The table uses a 1400×700 design canvas and scales to fit the window. Dice use a 2D rotation and bounce animation.
 
-Base wagers are at least $5. Whole-dollar chip amounts that cannot produce exact Place or odds payouts are rejected. Odds have a 3x maximum by default. Field 2 pays 2:1 by default (the engine supports 3:1), and Don't Pass/Don't Come 12 pushes by default.
+## Tests
 
-The table uses a 1400×700 design canvas and resizes to fit the window while preserving its layout. Dice use a 2D rotation and bounce animation, without 3D physics or drag-to-roll. Run the deterministic rules and betting interaction tests with:
+Run the rules and interaction suite with:
 
 ```sh
 ./venv/bin/python -m unittest discover -s tests
