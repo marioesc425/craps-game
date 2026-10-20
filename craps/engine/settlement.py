@@ -1,79 +1,95 @@
-"""Settles one bet against one roll. Rules only -- no drawing, no bankroll."""
-from typing import Optional
-
+"""Craps wager rules. BetResult.amount is the gross return, including stake."""
 from .bets import Bet, BetOutcome, BetResult, BetType
 
-# Payout ratios as (numerator, denominator): winnings = amount * num // den.
-# Whole-dollar bets mean odd amounts round down, in the house's favor.
-FIELD_PAYOUTS = {
-    2: (2, 1), 3: (1, 1), 4: (1, 1), 9: (1, 1), 10: (1, 1), 11: (1, 1), 12: (3, 1),
-}
-PLACE_PAYOUTS = {
-    4: (9, 5), 5: (7, 5), 6: (7, 6), 8: (7, 6), 9: (7, 5), 10: (9, 5),
-}
+VALID_NUMBERS = (4, 5, 6, 8, 9, 10)
+PLACE_PAYOUTS = {4: (9, 5), 5: (7, 5), 6: (7, 6), 8: (7, 6), 9: (7, 5), 10: (9, 5)}
+HARDWAY_PAYOUTS = {4: (7, 1), 6: (9, 1), 8: (9, 1), 10: (7, 1)}
 
 
-def settle_bet(bet: Bet, dice: tuple[int, int], point: Optional[int]) -> BetResult:
-    """Settle one bet against a roll.
-
-    `point` is the point as it stood BEFORE this roll (None means come-out).
-    """
-    settler = _SETTLERS.get(bet.bet_type)
-    if settler is None:
-        raise NotImplementedError(f"No settlement rule for {bet.bet_type}")
-    return settler(bet, dice, point)
-
-
-def _win(bet: Bet, winnings: int) -> BetResult:
-    return BetResult(bet, BetOutcome.WIN, winnings)
-
-
-def _lose(bet: Bet) -> BetResult:
-    return BetResult(bet, BetOutcome.LOSE, -bet.amount)
-
-
-def _no_action(bet: Bet) -> BetResult:
-    return BetResult(bet, BetOutcome.NO_ACTION)
-
-
-def _settle_pass_line(bet, dice, point):
-    total = sum(dice)
-    if point is None:                       # come-out roll
-        if total in (7, 11):
-            return _win(bet, bet.amount)
-        if total in (2, 3, 12):
-            return _lose(bet)
-    else:                                   # point phase
-        if total == point:
-            return _win(bet, bet.amount)
+def settle_bet(bet: Bet, dice: tuple[int, int], point: int | None,
+               field_two: int = 2, dont_pass_12_push: bool = True) -> BetResult:
+    if not isinstance(bet, Bet) or type(bet.amount) is not int or bet.amount < 5:
+        raise ValueError("A base wager must be at least $5 in whole-dollar chips")
+    if type(bet.odds) is not int or bet.odds < 0:
+        raise ValueError("Odds must be a nonnegative whole-dollar amount")
+    if bet.odds and bet.bet_type not in (BetType.PASS_LINE, BetType.DONT_PASS, BetType.COME, BetType.DONT_COME):
+        raise ValueError("Odds can only be attached to Pass/Don't Pass/Come/Don't Come wagers")
+    if bet.odds and bet.bet_type in (BetType.COME, BetType.DONT_COME) and bet.number is None:
+        raise ValueError("Come odds require an established number")
+    if bet.bet_type == BetType.PLACE and bet.number not in PLACE_PAYOUTS:
+        raise ValueError("Place bets require a number from 4, 5, 6, 8, 9, or 10")
+    if bet.bet_type == BetType.HARDWAY and bet.number not in HARDWAY_PAYOUTS:
+        raise ValueError("Hardways require a number of 4, 6, 8, or 10")
+    if len(dice) != 2 or any(type(die) is not int or die < 1 or die > 6 for die in dice):
+        raise ValueError("A roll must contain two integers from 1 to 6")
+    if field_two not in (2, 3):
+        raise ValueError("Field 2 payout must be 2:1 or 3:1")
+    total, is_hard = sum(dice), dice[0] == dice[1]
+    typ = bet.bet_type
+    win = lose = push = False
+    mult = (1, 1)
+    if typ in (BetType.PASS_LINE, BetType.DONT_PASS, BetType.COME, BetType.DONT_COME):
+        dont = typ in (BetType.DONT_PASS, BetType.DONT_COME)
+        come = typ in (BetType.COME, BetType.DONT_COME)
+        reference = bet.number if come else point
+        if reference is None:
+            if total in (4, 5, 6, 8, 9, 10):
+                if come:
+                    bet.number = total
+                return _result(bet, BetOutcome.NO_ACTION)
+            if dont:
+                win = total in (2, 3)
+                lose = total in (7, 11)
+                push = total == 12 and dont_pass_12_push
+                lose = lose or (total == 12 and not dont_pass_12_push)
+            else:
+                win = total in (7, 11)
+                lose = total in (2, 3, 12)
+        else:
+            win = total == (7 if dont else reference)
+            lose = total == (reference if dont else 7)
+        if bet.odds and reference is not None and (win or lose):
+            n, d = ({4:(2,1),5:(3,2),6:(6,5),8:(6,5),9:(3,2),10:(2,1)}[reference])
+            if dont:
+                n, d = d, n
+            if bet.odds * n % d:
+                raise ValueError("Odds payout is not representable in whole-dollar chips")
+            odds_return = bet.odds + (bet.odds * n // d) if win else 0
+        else:
+            odds_return = 0
+        if win:
+            return _result(bet, BetOutcome.WIN, bet.amount * 2 + odds_return)
+        if push:
+            return _result(bet, BetOutcome.PUSH, bet.amount + bet.odds)
+        if lose:
+            return _result(bet, BetOutcome.LOSE)
+        return _result(bet, BetOutcome.NO_ACTION)
+    if typ == BetType.FIELD:
+        if total == 2:
+            return _result(bet, BetOutcome.WIN, bet.amount * (1 + field_two))
+        if total in (3,4,9,10,11):
+            return _result(bet, BetOutcome.WIN, bet.amount * 2)
+        return _result(bet, BetOutcome.LOSE)
+    if typ == BetType.PLACE:
+        if point is None:
+            return _result(bet, BetOutcome.NO_ACTION)
         if total == 7:
-            return _lose(bet)
-    return _no_action(bet)
+            return _result(bet, BetOutcome.LOSE)
+        if total == bet.number:
+            n,d = PLACE_PAYOUTS[bet.number]
+            if bet.amount * n % d:
+                raise ValueError("Place payout is not representable in whole-dollar chips")
+            return _result(bet, BetOutcome.WIN, bet.amount + bet.amount*n//d)
+        return _result(bet, BetOutcome.NO_ACTION)
+    if typ == BetType.HARDWAY:
+        if total == 7 or (total == bet.number and not is_hard):
+            return _result(bet, BetOutcome.LOSE)
+        if total == bet.number and is_hard:
+            n,d = HARDWAY_PAYOUTS[bet.number]
+            return _result(bet, BetOutcome.WIN, bet.amount + bet.amount*n//d)
+        return _result(bet, BetOutcome.NO_ACTION)
+    raise ValueError(f"Unknown bet type: {typ}")
 
 
-def _settle_field(bet, dice, point):
-    total = sum(dice)
-    if total in FIELD_PAYOUTS:
-        numerator, denominator = FIELD_PAYOUTS[total]
-        return _win(bet, bet.amount * numerator // denominator)
-    return _lose(bet)                       # 5, 6, 7, 8
-
-
-def _settle_place(bet, dice, point):
-    total = sum(dice)
-    if point is None:                       # place bets are off on the come-out
-        return _no_action(bet)
-    if total == bet.number:
-        numerator, denominator = PLACE_PAYOUTS[bet.number]
-        return _win(bet, bet.amount * numerator // denominator)
-    if total == 7:
-        return _lose(bet)
-    return _no_action(bet)
-
-
-# Adding a bet type = write one settler above and add one line here.
-_SETTLERS = {
-    BetType.PASS_LINE: _settle_pass_line,
-    BetType.FIELD: _settle_field,
-    BetType.PLACE: _settle_place,
-}
+def _result(bet, outcome, returned=0):
+    return BetResult(bet, outcome, returned)

@@ -6,8 +6,7 @@ by changing that one number. The table is drawn once onto a cached surface and
 blitted every frame.
 
 Every betting area's shape lives in REGIONS (name -> Rect or polygon points),
-so later features such as clicking a bet can reuse the same shapes the artwork
-is drawn from. Only the Pass Line is playable today; the rest is scenery.
+so table interaction hit testing uses the same geometry as the artwork.
 """
 import math
 from functools import cache
@@ -19,10 +18,12 @@ from craps.ui.dice_view import PIP_LAYOUTS
 SCALE = 1.75
 WINDOW_SIZE = (1400, 700)  # the 800x400 reference times SCALE
 
-FELT = (0, 153, 51)
-WHITE = (255, 255, 255)
-YELLOW = (255, 255, 0)
-RED = (255, 0, 0)
+FELT = (13, 88, 63)
+WHITE = (238, 229, 205)
+YELLOW = (230, 190, 93)
+RED = (176, 54, 48)
+BACKGROUND = (12, 21, 25)
+RAIL = (91, 54, 31)
 LINE_W = 3
 
 # First font found wins. For a shipped game, bundle a .ttf file instead of
@@ -205,7 +206,10 @@ def _line(surface, start, end, width=LINE_W):
 @cache
 def _render_board():
     surface = pygame.Surface(WINDOW_SIZE)
-    surface.fill(FELT)
+    surface.fill(BACKGROUND)
+    pygame.draw.rect(surface, RAIL, pygame.Rect(13, 13, WINDOW_SIZE[0]-26, WINDOW_SIZE[1]-26), border_radius=34)
+    pygame.draw.rect(surface, YELLOW, pygame.Rect(20, 20, WINDOW_SIZE[0]-40, WINDOW_SIZE[1]-40), 2, border_radius=30)
+    pygame.draw.rect(surface, FELT, pygame.Rect(31, 31, WINDOW_SIZE[0]-62, WINDOW_SIZE[1]-62), border_radius=25)
     for shape in TABLE_REGIONS.values():
         if isinstance(shape, pygame.Rect):
             pygame.draw.rect(surface, WHITE, shape, LINE_W)

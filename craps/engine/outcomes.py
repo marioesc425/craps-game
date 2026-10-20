@@ -1,16 +1,19 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 from enum import Enum
+
+from .bets import BetResult
+
 
 class RollOutcome(Enum):
     WIN = "win"
     LOSE = "lose"
     POINT_ESTABLISHED = "point_established"
     CONTINUE = "continue"
-    
+
+
 @dataclass
 class RollResult:
     outcome: RollOutcome
-    # Not every outcome needs updated amount and point isn't always established 
-    amount: Optional[int] = None
     point: Optional[int] = None
+    bet_results: list[BetResult] = field(default_factory=list)

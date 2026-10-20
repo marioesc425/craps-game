@@ -1,35 +1,59 @@
 from typing import Optional
+from .bets import Bet
 from .outcomes import RollResult
 from .outcomes import RollOutcome
+from .settlement import settle_bet
 
-    
+
 class CrapsEngine:
-    def __init__(self):
+    def __init__(self, field_two_payout: int = 2, dont_pass_12_push: bool = True):
+        if field_two_payout not in (2, 3):
+            raise ValueError("Field 2 payout must be 2:1 or 3:1")
         self.point_on: bool = False
         self.point: Optional[int] = None
-        
-    def resolve_roll(self, roll_sum: int, bet: int) -> RollResult:
+        self.field_two_payout = field_two_payout
+        self.dont_pass_12_push = dont_pass_12_push
+        self.roll_history: list[tuple[int, int]] = []
+
+    def resolve_roll(self, dice: tuple[int, int], bets: list[Bet]) -> RollResult:
+        if (not isinstance(dice, (tuple, list)) or len(dice) != 2
+                or any(type(value) is not int or not 1 <= value <= 6 for value in dice)):
+            raise ValueError("A roll must contain two integers from 1 to 6")
+        if not isinstance(bets, (tuple, list)) or any(not isinstance(bet, Bet) for bet in bets):
+            raise ValueError("bets must be a list of Bet objects")
+        dice = tuple(dice)
+        # Settle every bet first, against the point as it stood BEFORE this roll.
+        bet_results = [settle_bet(bet, dice, self.point, self.field_two_payout, self.dont_pass_12_push) for bet in bets]
+        self.roll_history.append(dice)
+
+        roll_sum = sum(dice)
         loss = (2, 3, 12)
         win = (7, 11)
         if self.point_on:
             if roll_sum == 7:
                 self.point_on = False
                 self.point = None
-                return RollResult(outcome=RollOutcome.LOSE, amount=-bet, point=None)
+                return RollResult(outcome=RollOutcome.LOSE, point=None, bet_results=bet_results)
             elif roll_sum == self.point:
                 self.point_on = False
                 self.point = None
-                return RollResult(outcome=RollOutcome.WIN, amount=bet, point=None)
+                return RollResult(outcome=RollOutcome.WIN, point=None, bet_results=bet_results)
             else:
-                return RollResult(outcome=RollOutcome.CONTINUE, amount=None, point=self.point)
+                return RollResult(outcome=RollOutcome.CONTINUE, point=self.point, bet_results=bet_results)
         else:
             if roll_sum in loss:
                 self.point_on = False
-                return RollResult(outcome=RollOutcome.LOSE, amount=-bet, point=None)
+                return RollResult(outcome=RollOutcome.LOSE, point=None, bet_results=bet_results)
             elif roll_sum in win:
                 self.point_on = False
-                return RollResult(outcome=RollOutcome.WIN, amount=bet, point=None)
+                return RollResult(outcome=RollOutcome.WIN, point=None, bet_results=bet_results)
             else:
                 self.point_on = True
                 self.point = roll_sum
-                return RollResult(outcome=RollOutcome.POINT_ESTABLISHED, amount=None, point=roll_sum)
+                return RollResult(outcome=RollOutcome.POINT_ESTABLISHED, point=roll_sum, bet_results=bet_results)
+
+    def reset(self) -> None:
+        """Return to the come-out phase."""
+        self.point_on = False
+        self.point = None
+        self.roll_history.clear()

@@ -5,17 +5,23 @@ from typing import Optional
 
 class BetType(Enum):
     PASS_LINE = "pass_line"
+    DONT_PASS = "dont_pass"
+    COME = "come"
+    DONT_COME = "dont_come"
     FIELD = "field"
     PLACE = "place"
+    HARDWAY = "hardway"
 
 
 @dataclass
 class Bet:
     bet_type: BetType
     amount: int
-    number: Optional[int] = None  # only number bets use it; None means "not applicable"
-  
-    
+    number: Optional[int] = None
+    odds: int = 0
+    id: int = 0
+
+
 class BetOutcome(Enum):
     WIN = "win"
     LOSE = "lose"
@@ -25,6 +31,6 @@ class BetOutcome(Enum):
 
 @dataclass
 class BetResult:
-    bet: Bet               # which bet this result is about
+    bet: Bet
     outcome: BetOutcome
-    amount: int = 0           # net change in dollars: + for a win, - for a loss
+    amount: int = 0  # gross return credited to bankroll (stake was debited at placement)
