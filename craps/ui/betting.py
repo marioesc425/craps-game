@@ -235,9 +235,21 @@ def stack_center(bet, index=0):
     if bet.bet_type == BetType.DONT_PASS:
         return (788, 477)
     if bet.bet_type == BetType.COME:
+        if bet.number is not None:
+            rect = PLACE_RECTS[bet.number]
+            # A traveling Come bet leaves the Come box and sits on its number.
+            # Keep it near the left side so the printed number and a Place bet
+            # marker on the lower edge remain visible.
+            row = (-36, 0, 36)[index % 3]
+            return (rect.left + 22, rect.centery + row)
         slots = ((685, 265), (733, 265), (781, 265), (685, 312), (733, 312), (781, 312))
         return slots[index % len(slots)]
     if bet.bet_type == BetType.DONT_COME:
+        if bet.number is not None:
+            rect = PLACE_RECTS[bet.number]
+            # Keep the Don't Come marker on the opposite side of the number.
+            row = (-36, 0, 36)[index % 3]
+            return (rect.right - 22, rect.centery + row)
         slots = ((198, 73), (232, 73), (266, 73), (198, 118), (232, 118), (266, 118),
                  (198, 163), (232, 163), (266, 163))
         return slots[index % len(slots)]
@@ -260,8 +272,13 @@ def stack_positions(bets):
     counts = {}
     output = []
     for bet in bets:
-        index = counts.get(bet.bet_type, 0)
-        counts[bet.bet_type] = index + 1
+        # Traveling line bets need independent chip slots for each number;
+        # before travel they are arranged in their Come / Don't Come boxes.
+        key = ((bet.bet_type, bet.number)
+               if bet.bet_type in (BetType.COME, BetType.DONT_COME)
+               else bet.bet_type)
+        index = counts.get(key, 0)
+        counts[key] = index + 1
         output.append((bet, stack_center(bet, index)))
     return output
 

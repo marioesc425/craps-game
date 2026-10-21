@@ -40,6 +40,63 @@ class WagerRulesTests(unittest.TestCase):
         self.assertEqual(dont_come.number, 5)
         self.assertEqual(settle_bet(dont_come, (2,3), 6).outcome, BetOutcome.LOSE)
 
+    def test_come_full_lifecycle_travels_then_wins_on_its_number_with_odds(self):
+        player, game = Player(), CrapsEngine()
+        game.resolve_roll((2, 2), [])  # Shooter's point is 4.
+        come = player.place_wager(BetType.COME, 10, point=game.point)
+        self.assertEqual(player.bankroll, 90)
+
+        # The Come travels to 6. It must not be treated as a win when the
+        # shooter's separate point (4) repeats.
+        result = game.resolve_roll((3, 3), player.active_bets)
+        player.settle(result)
+        self.assertEqual((come.number, result.bet_results[0].outcome, player.bankroll),
+                         (6, BetOutcome.NO_ACTION, 90))
+        player.add_odds(come, 5, game.point)
+        result = game.resolve_roll((2, 2), player.active_bets)  # Shooter point repeats, Come stays up.
+        player.settle(result)
+        self.assertEqual((come in player.active_bets, player.bankroll), (True, 85))
+
+        result = game.resolve_roll((3, 3), player.active_bets)  # Come number 6 repeats.
+        player.settle(result)
+        self.assertEqual((result.bet_results[0].outcome, result.bet_results[0].amount),
+                         (BetOutcome.WIN, 31))
+        self.assertEqual((player.bankroll, player.active_bets), (116, []))
+
+    def test_come_wins_on_seven_or_eleven_and_loses_on_craps_before_travel(self):
+        expected = {7: BetOutcome.WIN, 11: BetOutcome.WIN,
+                    2: BetOutcome.LOSE, 3: BetOutcome.LOSE, 12: BetOutcome.LOSE}
+        dice = {7: (1, 6), 11: (5, 6), 2: (1, 1), 3: (1, 2), 12: (6, 6)}
+        for total, outcome in expected.items():
+            with self.subTest(total=total):
+                player, game = Player(), CrapsEngine()
+                game.resolve_roll((2, 2), [])
+                come = player.place_wager(BetType.COME, 10, point=game.point)
+                result = game.resolve_roll(dice[total], player.active_bets)
+                player.settle(result)
+                returned = 20 if outcome == BetOutcome.WIN else 0
+                self.assertEqual((result.bet_results[0].outcome,
+                                  result.bet_results[0].amount,
+                                  player.bankroll, come in player.active_bets),
+                                 (outcome, returned, 90 + returned, False))
+
+    def test_dont_come_travels_and_wins_on_seven_or_loses_on_its_number(self):
+        for final_roll, outcome, returned in (((1, 6), BetOutcome.WIN, 20),
+                                               ((3, 3), BetOutcome.LOSE, 0)):
+            with self.subTest(final_roll=final_roll):
+                player, game = Player(), CrapsEngine()
+                game.resolve_roll((2, 2), [])
+                dont_come = player.place_wager(BetType.DONT_COME, 10, point=game.point)
+                travel = game.resolve_roll((3, 3), player.active_bets)
+                player.settle(travel)
+                self.assertEqual((dont_come.number, travel.bet_results[0].outcome,
+                                  player.bankroll), (6, BetOutcome.NO_ACTION, 90))
+                result = game.resolve_roll(final_roll, player.active_bets)
+                player.settle(result)
+                self.assertEqual((result.bet_results[0].outcome,
+                                  player.bankroll, dont_come in player.active_bets),
+                                 (outcome, 90 + returned, False))
+
     def test_place_payouts_and_seven(self):
         for number, (num, den) in {4:(9,5),5:(7,5),6:(7,6),8:(7,6),9:(7,5),10:(9,5)}.items():
             stake = den * 5

@@ -228,6 +228,42 @@ class TableHitTestingTests(unittest.TestCase):
         self.assertEqual(player.bankroll, 111)
         self.assertFalse(player.active_bets)
 
+    def test_traveled_come_bets_move_to_their_number_on_table(self):
+        from craps.ui.board import PLACE_RECTS
+        for bet_type, zone_name, expected_side in (
+                (BetType.COME, "come", "left"),
+                (BetType.DONT_COME, "dont_come", "right")):
+            with self.subTest(bet_type=bet_type):
+                player, engine = Player(), CrapsEngine()
+                engine.resolve_roll((2, 2), [])  # Point 4; Come bets are now available.
+                zone = next(zone for zone in ZONES if zone.name == zone_name)
+                bet, action = place_chip(player, engine, zone, 5)
+                self.assertEqual((bet.number, action), (None, "new"))
+                self.assertTrue(zone.contains(stack_center(bet)))
+
+                result = engine.resolve_roll((3, 3), player.active_bets)  # Travel to 6.
+                player.settle(result)
+                rect = PLACE_RECTS[6]
+                expected_x = rect.left + 22 if expected_side == "left" else rect.right - 22
+                self.assertEqual(bet.number, 6)
+                self.assertEqual(stack_center(bet), (expected_x, rect.centery - 36))
+                self.assertFalse(zone.contains(stack_center(bet)))
+                self.assertIs(stack_at(stack_center(bet), player.active_bets), bet)
+
+    def test_multiple_come_bets_on_the_same_number_keep_separate_click_targets(self):
+        player, engine = Player(), CrapsEngine()
+        engine.resolve_roll((2, 2), [])
+        zone = next(zone for zone in ZONES if zone.name == "come")
+        first, _ = place_chip(player, engine, zone, 5)
+        second, _ = place_chip(player, engine, zone, 5)
+        engine.resolve_roll((3, 3), player.active_bets)
+
+        first_center = stack_center(first, 0)
+        second_center = stack_center(second, 1)
+        self.assertNotEqual(first_center, second_center)
+        self.assertIs(stack_at(first_center, player.active_bets), first)
+        self.assertIs(stack_at(second_center, player.active_bets), second)
+
 
 if __name__ == "__main__":
     unittest.main()
