@@ -3,16 +3,22 @@ from .bets import Bet
 from .outcomes import RollResult
 from .outcomes import RollOutcome
 from .settlement import settle_bet
+from .config import DEFAULT_TABLE_RULES, TableRules
 
 
 class CrapsEngine:
-    def __init__(self, field_two_payout: int = 2, dont_pass_12_push: bool = True):
-        if field_two_payout not in (2, 3):
-            raise ValueError("Field 2 payout must be 2:1 or 3:1")
+    def __init__(self, field_two_payout: int | None = None, dont_pass_12_push: bool | None = None,
+                 field_twelve_payout: int | None = None, rules: TableRules = DEFAULT_TABLE_RULES):
+        if not isinstance(rules, TableRules):
+            raise TypeError("rules must be a TableRules configuration")
         self.point_on: bool = False
         self.point: Optional[int] = None
-        self.field_two_payout = field_two_payout
-        self.dont_pass_12_push = dont_pass_12_push
+        self.rules = rules
+        self.field_two_payout = rules.field_two_payout if field_two_payout is None else field_two_payout
+        self.field_twelve_payout = rules.field_twelve_payout if field_twelve_payout is None else field_twelve_payout
+        self.dont_pass_12_push = rules.dont_pass_12_push if dont_pass_12_push is None else dont_pass_12_push
+        if self.field_two_payout not in (2, 3) or self.field_twelve_payout not in (2, 3):
+            raise ValueError("Field 2 and 12 payouts must be 2:1 or 3:1")
         self.roll_history: list[tuple[int, int]] = []
 
     def resolve_roll(self, dice: tuple[int, int], bets: list[Bet]) -> RollResult:
@@ -23,7 +29,8 @@ class CrapsEngine:
             raise ValueError("bets must be a list of Bet objects")
         dice = tuple(dice)
         # Settle every bet first, against the point as it stood BEFORE this roll.
-        bet_results = [settle_bet(bet, dice, self.point, self.field_two_payout, self.dont_pass_12_push) for bet in bets]
+        bet_results = [settle_bet(bet, dice, self.point, self.field_two_payout,
+                                  self.dont_pass_12_push, self.field_twelve_payout, self.rules) for bet in bets]
         self.roll_history.append(dice)
 
         roll_sum = sum(dice)

@@ -2,7 +2,7 @@
 from typing import NamedTuple
 import pygame
 
-PANEL_RECT = pygame.Rect(44, 592, 520, 96)
+PANEL_RECT = pygame.Rect(44, 660, 880, 30)
 PANEL_COLOR = (0, 67, 47)
 WHITE = (247, 238, 215)
 GOLD = (230, 190, 93)
@@ -14,21 +14,16 @@ class HudFonts(NamedTuple):
 
 
 def make_hud_fonts():
-    return HudFonts(pygame.font.Font(None, 22), pygame.font.Font(None, 44))
+    return HudFonts(pygame.font.Font(None, 18), pygame.font.Font(None, 22))
 
 
-def draw_hud(screen, fonts, bankroll, selected_chip):
+def draw_hud(screen, fonts, bankroll, selected_chip, rules, chip_label=None):
     pygame.draw.rect(screen, PANEL_COLOR, PANEL_RECT)
-    pygame.draw.rect(screen, WHITE, PANEL_RECT, 3)
-    pygame.draw.line(screen, WHITE,
-                     (PANEL_RECT.centerx, PANEL_RECT.top + 12),
-                     (PANEL_RECT.centerx, PANEL_RECT.bottom - 12), 2)
-    left_x = PANEL_RECT.left + PANEL_RECT.width // 4
-    right_x = PANEL_RECT.left + 3 * PANEL_RECT.width // 4
-    _center(screen, fonts.label, "BANKROLL", WHITE, (left_x, PANEL_RECT.top + 28))
-    _center(screen, fonts.value, f"${bankroll:.2f}", WHITE, (left_x, PANEL_RECT.top + 62))
-    _center(screen, fonts.label, "SELECTED CHIP", WHITE, (right_x, PANEL_RECT.top + 28))
-    _center(screen, fonts.value, f"${selected_chip:g}", GOLD, (right_x, PANEL_RECT.top + 62))
+    pygame.draw.rect(screen, GOLD, PANEL_RECT, 1)
+    summary = (f"BANKROLL  ${bankroll}     CHIP  {chip_label or f'${selected_chip}'}"
+               f"     TABLE  ${rules.minimum_bet}–${rules.maximum_single_wager}"
+               f"     ODDS  {rules.maximum_odds_multiplier}×")
+    _center(screen, fonts.value, summary, WHITE, PANEL_RECT.center)
 
 
 def _center(screen, font, value, color, position):

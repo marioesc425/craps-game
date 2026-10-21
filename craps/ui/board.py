@@ -14,6 +14,9 @@ from functools import cache
 import pygame
 
 from craps.ui.dice_view import PIP_LAYOUTS
+from craps.engine.config import DEFAULT_TABLE_RULES
+from craps.engine.bets import BetType
+from craps.engine.settlement import HARDWAY_PAYOUTS, PLACE_PAYOUTS, PROPOSITION_PAYOUTS
 
 SCALE = 1.75
 WINDOW_SIZE = (1400, 700)  # the 800x400 reference times SCALE
@@ -94,37 +97,44 @@ TABLE_REGIONS = {
 
 # Proposition bets (right-hand box), in ref units: name -> (x0, y0, x1, y1).
 PROP_LEFT, PROP_MID, PROP_RIGHT = 550, 662.5, 775
-PROP_THIRDS = (550, 625, 699.5, 775)
-PROP_ROW_Y = (149.5, 172.5, 217, 261, 305, 349, 375)
+PROP_ROW_Y = (149.5, 194.5, 239.5, 284.5, 329.5, 374.5)
 PROP_CELLS = {
-    "any_seven": (550, 149.5, 775, 172.5),
-    "hard_6": (550, 172.5, PROP_MID, 217),
-    "hard_10": (PROP_MID, 172.5, 775, 217),
-    "hard_8": (550, 217, PROP_MID, 261),
-    "hard_4": (PROP_MID, 217, 775, 261),
-    "ace_deuce": (550, 261, 625, 305),
-    "aces": (625, 261, 699.5, 305),
-    "boxcars": (699.5, 261, 775, 305),
-    "yo_left": (550, 305, PROP_MID, 349),
-    "yo_right": (PROP_MID, 305, 775, 349),
-    "any_craps": (550, 349, 775, 375),
+    "hard_6": (550, 149.5, PROP_MID, 194.5),
+    "hard_10": (PROP_MID, 149.5, 775, 194.5),
+    "hard_8": (550, 194.5, PROP_MID, 239.5),
+    "hard_4": (PROP_MID, 194.5, 775, 239.5),
+    "ace_deuce": (550, 239.5, PROP_MID, 284.5),
+    "aces": (PROP_MID, 239.5, 775, 284.5),
+    "boxcars": (550, 284.5, PROP_MID, 329.5),
+    "yo_eleven": (PROP_MID, 284.5, 775, 329.5),
+    "any_seven": (550, 329.5, PROP_MID, 374.5),
+    "any_craps": (PROP_MID, 329.5, 775, 374.5),
 }
 PROP_REGIONS = {name: _box(*coords) for name, coords in PROP_CELLS.items()}
 
 REGIONS = {**TABLE_REGIONS, **PROP_REGIONS}
 
-# (cell, dice shown, payout) for the cells that show a pair of dice.
-PROP_DICE = [
-    ("hard_6", (3, 3), "9 to 1"),
-    ("hard_10", (5, 5), "7 to 1"),
-    ("hard_8", (4, 4), "9 to 1"),
-    ("hard_4", (2, 2), "7 to 1"),
-    ("ace_deuce", (1, 2), "15 to 1"),
-    ("aces", (1, 1), "30 to 1"),
-    ("boxcars", (6, 6), "30 to 1"),
-    ("yo_left", (6, 5), "15 to 1"),
-    ("yo_right", (6, 5), "15 to 1"),
-]
+PROP_LABELS = {
+    "hard_6": "HARD 6", "hard_10": "HARD 10", "hard_8": "HARD 8", "hard_4": "HARD 4",
+    "any_seven": "ANY SEVEN", "ace_deuce": "ACE-DEUCE", "aces": "ACES",
+    "boxcars": "BOXCARS", "yo_eleven": "YO (11)", "any_craps": "ANY CRAPS (2/3/12)",
+}
+PROP_TYPES = {
+    "hard_6": (BetType.HARDWAY, 6), "hard_10": (BetType.HARDWAY, 10),
+    "hard_8": (BetType.HARDWAY, 8), "hard_4": (BetType.HARDWAY, 4),
+    "any_seven": (BetType.ANY_SEVEN, None), "ace_deuce": (BetType.ACE_DEUCE, None),
+    "aces": (BetType.ACES, None), "boxcars": (BetType.BOXCARS, None),
+    "yo_eleven": (BetType.YO_ELEVEN, None), "any_craps": (BetType.ANY_CRAPS, None),
+}
+
+
+def _payout_label(name):
+    bet_type, number = PROP_TYPES[name]
+    if bet_type == BetType.HARDWAY:
+        net, _ = HARDWAY_PAYOUTS[number]
+    else:
+        _, net = PROPOSITION_PAYOUTS[bet_type]
+    return f"{net}:1"
 
 # --- Game overlay positions (window pixels) ----------------------------------
 
@@ -140,9 +150,9 @@ DICE_AREA_CENTER = (1158, 100)
 # --- Public drawing functions --------------------------------------------------
 
 
-def draw_board(screen):
+def draw_board(screen, rules=DEFAULT_TABLE_RULES):
     """Draw the whole table onto `screen`."""
-    screen.blit(_render_board(), (0, 0))
+    screen.blit(_render_board(rules.field_two_payout, rules.field_twelve_payout), (0, 0))
 
 
 def draw_puck(screen, font, point):
@@ -204,7 +214,7 @@ def _line(surface, start, end, width=LINE_W):
 
 
 @cache
-def _render_board():
+def _render_board(field_two_payout=2, field_twelve_payout=2):
     surface = pygame.Surface(WINDOW_SIZE)
     surface.fill(BACKGROUND)
     pygame.draw.rect(surface, RAIL, pygame.Rect(13, 13, WINDOW_SIZE[0]-26, WINDOW_SIZE[1]-26), border_radius=34)
@@ -219,7 +229,7 @@ def _render_board():
     _draw_proposition_box(surface)
     _draw_left_side(surface)
     _draw_number_row(surface)
-    _draw_middle(surface)
+    _draw_middle(surface, field_two_payout, field_twelve_payout)
     _draw_propositions(surface)
     return surface
 
@@ -235,22 +245,13 @@ def _draw_number_row_lines(surface):
 
 def _draw_proposition_box(surface):
     outline = _box(PROP_LEFT, PROP_ROW_Y[0], PROP_RIGHT, PROP_ROW_Y[-1])
-    pygame.draw.rect(surface, WHITE, outline, LINE_W, border_radius=round(8 * SCALE))
+    for index, (y0, y1) in enumerate(zip(PROP_ROW_Y, PROP_ROW_Y[1:])):
+        fill = (8, 67, 50) if index % 2 == 0 else (10, 75, 56)
+        pygame.draw.rect(surface, fill, _box(PROP_LEFT, y0, PROP_RIGHT, y1))
+    pygame.draw.rect(surface, YELLOW, outline, LINE_W, border_radius=round(8 * SCALE))
     for y in PROP_ROW_Y[1:-1]:
-        _line(surface, (PROP_LEFT, y), (PROP_RIGHT, y))
-    for y0, y1 in ((172.5, 261), (305, 349)):
-        _line(surface, (PROP_MID, y0), (PROP_MID, y1))
-    for x in PROP_THIRDS[1:3]:
-        _line(surface, (x, 261), (x, 305))
-
-    # Two columns of lettered circles beside the box, one pair per row.
-    radius = round(10.5 * SCALE)
-    for i in range(7):
-        e_center, c_center = _p(509, 206 + 27 * i), _p(534, 212.5 + 24.75 * i)
-        pygame.draw.circle(surface, WHITE, e_center, radius, 2)
-        pygame.draw.circle(surface, WHITE, c_center, radius, 2)
-        _text(surface, "E", 14, WHITE, (509, 206 + 27 * i), bold=False)
-        _text(surface, "C", 14, WHITE, (534, 212.5 + 24.75 * i), bold=False)
+        _line(surface, (PROP_LEFT, y), (PROP_RIGHT, y), 2)
+    _line(surface, (PROP_MID, PROP_ROW_Y[0]), (PROP_MID, PROP_ROW_Y[-1]), 2)
 
 
 def _draw_left_side(surface):
@@ -277,6 +278,8 @@ def _draw_left_side(surface):
 def _draw_number_row(surface):
     for number, rect in PLACE_RECTS.items():
         center = (rect.centerx / SCALE, 86.7)
+        n, d = PLACE_PAYOUTS[number]
+        _text(surface, f"{n}:{d}", 12, WHITE, (center[0], 35.5))
         if number == 6:
             _text(surface, "SIX", 22, YELLOW, center, angle=18, italic=True)
         elif number == 9:
@@ -285,7 +288,7 @@ def _draw_number_row(surface):
             _text(surface, str(number), 40, YELLOW, center)
 
 
-def _draw_middle(surface):
+def _draw_middle(surface, field_two_payout=2, field_twelve_payout=2):
     _text(surface, "COME", 50, RED, (270, 157))
 
     # FIELD: 2 and 12 are circled.
@@ -295,6 +298,8 @@ def _draw_middle(surface):
     _text(surface, "12", 17, YELLOW, (421, 215))
     _text(surface, "\u2022 3 \u2022 4 \u2022 9 \u2022 10 \u2022 11 \u2022", 19.5, YELLOW, (310, 214))
     _text(surface, "FIELD", 23, YELLOW, (310, 231))
+    _text(surface, f"2 PAYS {field_two_payout}:1  ·  12 PAYS {field_twelve_payout}:1",
+          10, WHITE, (310, 244), bold=False)
 
     # Bottom bands.
     _text(surface, "Don't Pass Bar", 21, WHITE, (247, 269), italic=True)
@@ -303,15 +308,17 @@ def _draw_middle(surface):
 
 
 def _draw_propositions(surface):
-    for name, dice, payout in PROP_DICE:
-        x0, y0, x1, _ = PROP_CELLS[name]
-        cx = (x0 + x1) / 2
-        _dice_pair(surface, (cx, y0 + 13.75), dice, 15, 22.5)
-        _text(surface, payout, 18, WHITE, (cx, y0 + 33.5))
-
-    _text(surface, "SEVEN", 18, RED, (662, 161), italic=True)
-    _text(surface, "ANY CRAPS", 16.5, RED, (665, 362), italic=True)
-    _text(surface, "4 to 1", 17.5, WHITE, (589, 161))
-    _text(surface, "4 to 1", 17.5, WHITE, (729, 161))
-    _text(surface, "7 to 1", 17.5, WHITE, (584, 362))
-    _text(surface, "7 to 1", 17.5, WHITE, (744, 362))
+    dice_faces = {
+        "hard_6": (3, 3), "hard_10": (5, 5), "hard_8": (4, 4),
+        "hard_4": (2, 2), "ace_deuce": (1, 2), "aces": (1, 1),
+        "boxcars": (6, 6), "yo_eleven": (5, 6), "any_seven": (3, 4),
+        "any_craps": (1, 2),
+    }
+    for name, label in PROP_LABELS.items():
+        x0, y0, x1, y1 = PROP_CELLS[name]
+        # Keep labels and dice in the same bounded cell, leaving the lower
+        # right corner clear for the wager stack drawn by the betting UI.
+        text_x = x0 + 66
+        _text(surface, label.replace(" (2/3/12)", ""), 9, WHITE, (text_x, y0 + 13))
+        _text(surface, f"PAYS  {_payout_label(name)}", 8, YELLOW, (text_x, y0 + 29))
+        _dice_pair(surface, (x0 + 25, y0 + 23), dice_faces[name], 10, 12)

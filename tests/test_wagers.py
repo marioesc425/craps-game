@@ -1,9 +1,11 @@
 import unittest
+from dataclasses import replace
 
 from craps.engine.bets import Bet, BetOutcome, BetType
 from craps.engine.game import CrapsEngine
 from craps.engine.player import Player, InvalidBetError
 from craps.engine.settlement import settle_bet
+from craps.engine.config import DEFAULT_TABLE_RULES
 
 
 class WagerRulesTests(unittest.TestCase):
@@ -51,13 +53,102 @@ class WagerRulesTests(unittest.TestCase):
             r = settle_bet(Bet(BetType.FIELD, 5), dice, None)
             self.assertEqual(r.outcome, BetOutcome.WIN)
             self.assertEqual(r.amount, 15 if total == 2 else 10)
-        for dice in ((1,4),(2,4),(1,6),(2,6),(6,6)):
+        for dice in ((1,4),(2,4),(1,6),(2,6)):
             self.assertEqual(settle_bet(Bet(BetType.FIELD, 5), dice, None).outcome, BetOutcome.LOSE)
+        self.assertEqual(settle_bet(Bet(BetType.FIELD, 5), (6,6), None).outcome, BetOutcome.WIN)
 
     def test_configurable_field_and_twelve_rule(self):
         self.assertEqual(settle_bet(Bet(BetType.FIELD, 5), (1,1), None, 3).amount, 20)
         self.assertEqual(settle_bet(Bet(BetType.DONT_PASS, 5), (6,6), None, dont_pass_12_push=False).outcome,
                          BetOutcome.LOSE)
+
+    def test_field_twelve_wins_with_configured_house_payout(self):
+        self.assertEqual(settle_bet(Bet(BetType.FIELD, 5), (6,6), None).amount, 15)
+        rules = replace(DEFAULT_TABLE_RULES, field_twelve_payout=3)
+        self.assertEqual(settle_bet(Bet(BetType.FIELD, 5), (6,6), None, rules=rules).amount, 20)
+
+    def test_exact_gross_returns_for_requested_examples(self):
+        cases = [
+            (Bet(BetType.PASS_LINE, 5), (3,4), None, 10),
+            (Bet(BetType.PLACE, 10, 4), (1,3), 6, 28),
+            (Bet(BetType.PLACE, 25, 5), (2,3), 6, 60),
+            (Bet(BetType.PLACE, 30, 6), (3,3), 6, 65),
+            (Bet(BetType.HARDWAY, 10, 4), (2,2), 6, 80),
+            (Bet(BetType.PASS_LINE, 5, odds=10), (1,3), 4, 40),
+            (Bet(BetType.DONT_PASS, 10), (6,6), None, 10),
+        ]
+        for bet, dice, point, gross_return in cases:
+            with self.subTest(bet=bet):
+                self.assertEqual(settle_bet(bet, dice, point).amount, gross_return)
+
+    def test_one_dollar_stakes_have_exact_whole_dollar_returns(self):
+        cases = [
+            (BetType.PASS_LINE, None, (3, 4), None, 2),
+            (BetType.FIELD, None, (1, 1), None, 3),
+            (BetType.FIELD, None, (1, 2), None, 2),
+            (BetType.HARDWAY, 4, (2, 2), 6, 8),
+            (BetType.ANY_SEVEN, None, (3, 4), None, 5),
+            (BetType.ACE_DEUCE, None, (1, 2), None, 16),
+            (BetType.ACES, None, (1, 1), None, 31),
+            (BetType.BOXCARS, None, (6, 6), None, 31),
+            (BetType.YO_ELEVEN, None, (5, 6), None, 16),
+            (BetType.ANY_CRAPS, None, (1, 2), None, 8),
+        ]
+        for bet_type, number, dice, point, gross in cases:
+            with self.subTest(bet=bet_type):
+                self.assertEqual(settle_bet(Bet(bet_type, 1, number), dice, point).amount, gross)
+
+    def test_central_table_limits_and_no_split_bypass(self):
+        rules = replace(DEFAULT_TABLE_RULES, starting_bankroll=1500)
+        p = Player(rules=rules)
+        self.assertEqual(rules.minimum_bet, 1)
+        one_dollar = p.place_wager(BetType.PASS_LINE, 1)
+        self.assertEqual((one_dollar.amount, p.bankroll), (1, 1499))
+        p.undo_wager(one_dollar)
+        wager = p.place_wager(BetType.PASS_LINE, 500)
+        self.assertEqual((wager.amount, p.bankroll), (500, 1000))
+        with self.assertRaises(InvalidBetError):
+            p.increase_wager(wager, 1)
+        with self.assertRaises(InvalidBetError):
+            p.place_wager(BetType.PASS_LINE, 5)
+        self.assertEqual((wager.amount, p.bankroll), (500, 1000))
+
+    def test_bankroll_below_table_minimum_cannot_start_a_wager(self):
+        p = Player()
+        p.bankroll = 0
+        self.assertFalse(p.can_play())
+        with self.assertRaises(InvalidBetError):
+            p.place_wager(BetType.FIELD, 1)
+        self.assertEqual((p.bankroll, p.active_bets), (0, []))
+
+    def test_all_five_standard_chip_denominations_place_exact_amounts(self):
+        rules = replace(DEFAULT_TABLE_RULES, starting_bankroll=1500)
+        for chip in rules.chip_denominations:
+            with self.subTest(chip=chip):
+                p = Player(rules=rules)
+                wager = p.place_wager(BetType.PASS_LINE, chip)
+                expected_total = chip
+                self.assertEqual(wager.amount, expected_total)
+                self.assertEqual(p.bankroll, 1500 - expected_total)
+
+    def test_place_six_increment_rejected_without_deduction(self):
+        p = Player()
+        with self.assertRaises(InvalidBetError):
+            p.place_wager(BetType.PLACE, 5, 6)
+        self.assertEqual((p.bankroll, p.active_bets), (100, []))
+        p.place_wager(BetType.PLACE, 6, 6)
+        with self.assertRaises(InvalidBetError):
+            p.increase_wager(p.active_bets[0], 1)
+        self.assertEqual((p.bankroll, p.active_bets[0].amount), (94, 6))
+
+    def test_place_reductions_must_preserve_exact_payout_compatibility(self):
+        player = Player()
+        bet = player.place_wager(BetType.PLACE, 6, 6)
+        with self.assertRaises(InvalidBetError):
+            player.reduce_wager(bet, 1)
+        self.assertEqual((bet.amount, player.bankroll), (6, 94))
+        with self.assertRaises(ValueError):
+            settle_bet(Bet(BetType.PLACE, 1, 6), (3, 3), 6)
 
     def test_hardways(self):
         for number, pair, payout in ((4,(2,2),7),(6,(3,3),9),(8,(4,4),9),(10,(5,5),7)):
@@ -130,6 +221,20 @@ class WagerRulesTests(unittest.TestCase):
         self.assertEqual(p.bankroll, 95)
         self.assertNotIn(b, p.active_bets)
         self.assertEqual(game.point, 5)
+
+    def test_proposition_bets_lose_on_nonwinning_totals(self):
+        losing_rolls = {
+            BetType.ANY_SEVEN: (4,4), BetType.ACE_DEUCE: (1,1),
+            BetType.ACES: (1,2), BetType.BOXCARS: (5,6),
+            BetType.YO_ELEVEN: (3,4), BetType.ANY_CRAPS: (3,4),
+        }
+        for bet_type, dice in losing_rolls.items():
+            with self.subTest(bet=bet_type):
+                player, engine = Player(), CrapsEngine()
+                bet = player.place_wager(bet_type, 5)
+                player.settle(engine.resolve_roll(dice, player.active_bets))
+                self.assertEqual(player.bankroll, 95)
+                self.assertNotIn(bet, player.active_bets)
 
 
 if __name__ == "__main__":

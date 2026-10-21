@@ -11,6 +11,12 @@ class BetType(Enum):
     FIELD = "field"
     PLACE = "place"
     HARDWAY = "hardway"
+    ANY_SEVEN = "any_seven"
+    ACE_DEUCE = "ace_deuce"
+    ACES = "aces"
+    BOXCARS = "boxcars"
+    YO_ELEVEN = "yo_eleven"
+    ANY_CRAPS = "any_craps"
 
 
 @dataclass

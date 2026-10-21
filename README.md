@@ -4,9 +4,9 @@ A playable craps game built with Python and Pygame. The table is the interface: 
 
 ## What it does
 
-- Implements Pass Line, Don't Pass, Come, Don't Come, Field, Place 4/5/6/8/9/10, Hard 4/6/8/10, and odds on eligible line bets.
+- Implements Pass Line, Don't Pass, Come, Don't Come, Field, Place 4/5/6/8/9/10, Hard 4/6/8/10, and the printed proposition bets (Any Seven, Ace-Deuce, Aces, Boxcars, Yo, and Any Craps), plus odds on eligible line bets.
 - Enforces come-out and point phases, wager limits, exact whole-dollar payout amounts, and bankroll accounting.
-- Shows wagers as chip stacks on their corresponding table areas. Click a stack to add to that wager or, when eligible, add odds to that specific bet.
+- Shows wagers as chip stacks on their corresponding table areas. Click a stack to add to that wager or, when eligible, add odds to that specific bet. Proposition bets resolve on the next roll.
 - Provides chip selection, hover feedback, recent-roll status, undo before the next roll, and a roll animation.
 - Resizes the table while preserving the layout.
 
@@ -17,14 +17,21 @@ I built the original game engine and core flow through Pass Line and Field bets.
 ## Project structure
 
 - `craps/engine/` — bet types, dice, game phase and roll history, wager validation, payout calculation, and bankroll settlement.
-- `craps/ui/board.py` — table artwork and the geometry for its betting areas.
-- `craps/ui/betting.py` — direct hit-testing against that same table geometry, wager placement helpers, and on-table chip stacks.
+- `craps/ui/board.py` — table artwork and the shared geometry for its betting areas, including the proposition grid.
+- `craps/ui/betting.py` — direct hit-testing against that same table geometry, chip accumulation, wager placement helpers, and on-table chip stacks.
+- `craps/ui/viewport.py` — letterbox scale and offset transforms shared by resized-window rendering and mouse coordinates.
 - `craps/ui/main.py` — Pygame event loop, controls, status display, and dice animation.
 - `tests/` — deterministic tests for dice, game flow, bet rules, payouts, and table betting interactions.
 
 ## Rules and defaults
 
-The game starts with a $100 bankroll and uses a $5 minimum base bet. Place payouts follow common craps payouts: 9:5 on 4/10, 7:5 on 5/9, and 7:6 on 6/8. A $6 chip is included so Place 6 and Place 8 can pay in whole dollars. Odds are capped at 3× the base wager by default. Field 2 pays 2:1 by default (the engine also supports 3:1), and Don't Pass/Don't Come 12 pushes by default. These values are configured in the engine and can be adjusted in code.
+The default table starts with a $100 bankroll, a $1 minimum base wager, a $500 maximum base wager, a $500 maximum on any single base wager, and odds up to 3× the associated line wager. The selectable chip denominations are $1, $5, $25, $100, and $500; $1 is selected when a new game starts. Place bets retain increments that produce exact whole-dollar payouts: Place 4/10 uses $5 increments, 5/9 uses $5 increments, and 6/8 uses $6 increments formed from the standard $1 and $5 chips. Partial chips remain visible and can be undone until the selected area has a valid wager; an incomplete amount must be completed or undone before rolling. Field 2 and 12 pay 2:1 by default, and Don't Pass/Don't Come 12 pushes by default. Field 2/12 payouts and the 12 push rule are house policies, not universal rules.
+
+The proposition table uses the payouts printed for its bets: Any Seven 4:1, Ace-Deuce 15:1, Aces and Boxcars 30:1, Yo (11) 15:1, Any Craps 7:1, and the standard Hardway payouts. Each is a one-roll wager. These side-bet payouts are house rules and may vary by casino.
+
+Defaults live in [`craps/engine/config.py`](craps/engine/config.py) as `TableRules`. The minimum, maximum, single-wager cap, odds multiple, starting bankroll, chip values, Field payouts, and Don't Pass/Don't Come 12 policy can be changed there. These are coherent defaults for this game rather than claims about every casino. Published casino schedules vary; for example, California-approved rules for Hollywood Park show $10–$300 on most listed line and Place bets and $12–$300 for Place 6/8. New Jersey regulations specify common Place payout ratios. The Venetian also notes house-specific Field-bet payouts.
+
+Rules references: [New Jersey craps payout regulations](https://www.law.cornell.edu/regulations/new-jersey/N-J-A-C-13-69F-1-4), [Hollywood Park Casino rules and table limits (California DOJ)](https://oag.ca.gov/system/files/media/hollywood-park.pdf), [The Venetian craps rules](https://www.venetianlasvegas.com/resort/casino/table-games/craps-basic-rules.html). Chip colors are a visual convention chosen for this game; casinos can vary their colors and denominations.
 
 ## Run
 
@@ -38,8 +45,8 @@ python3 -m venv venv  # skip if the project's venv already exists
 
 ## Controls
 
-- Select a chip in the tray or use **1–6**.
-- Click a betting area to place the selected chip.
+- Select a chip in the tray or use **1–5** ($1, $5, $25, $100, $500).
+- Click a betting area to place or stage the selected chip. Staged chips are charged only when they form a valid wager; Undo Chip or **Z** removes them, and the dice cannot roll while a staged amount is incomplete.
 - Click a wager's chip stack to add to it; after a number is established, that stack can also receive odds.
 - Click **Roll Dice** or press **Space** to roll.
 - Click **Undo Chip** or press **Z** to refund the latest wager change since the last roll.

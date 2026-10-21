@@ -1,10 +1,11 @@
 from .bets import Bet, BetOutcome
-from .settlement import PLACE_PAYOUTS
+from .config import DEFAULT_TABLE_RULES, TableRules
+from .settlement import PLACE_PAYOUTS, HARDWAY_PAYOUTS
 
-STARTING_BANKROLL = 100
-MIN_BET = 5
+STARTING_BANKROLL = DEFAULT_TABLE_RULES.starting_bankroll
+MIN_BET = DEFAULT_TABLE_RULES.minimum_bet
 CHIP_UNIT = 1
-MAX_ODDS_MULTIPLIER = 3
+MAX_ODDS_MULTIPLIER = DEFAULT_TABLE_RULES.maximum_odds_multiplier
 
 
 class InvalidBetError(ValueError):
@@ -12,11 +13,15 @@ class InvalidBetError(ValueError):
 
 
 class Player:
-    def __init__(self, max_odds_multiplier=MAX_ODDS_MULTIPLIER):
+    def __init__(self, max_odds_multiplier=None, rules: TableRules = DEFAULT_TABLE_RULES):
+        if not isinstance(rules, TableRules):
+            raise TypeError("rules must be a TableRules configuration")
+        max_odds_multiplier = rules.maximum_odds_multiplier if max_odds_multiplier is None else max_odds_multiplier
         if max_odds_multiplier not in (0, 1, 2, 3, 4, 5, 10):
             raise ValueError("Unsupported odds limit")
         self.max_odds_multiplier = max_odds_multiplier
-        self.bankroll = STARTING_BANKROLL
+        self.rules = rules
+        self.bankroll = rules.starting_bankroll
         self.active_bets: list[Bet] = []
         self._next_id = 1
         self._settled_bets = []
@@ -27,8 +32,10 @@ class Player:
 
     def place_wager(self, bet_type, amount, number=None, odds=0, point=None):
         from .bets import BetType
-        if not isinstance(bet_type, BetType) or type(amount) is not int or amount < MIN_BET or amount % CHIP_UNIT:
-            raise InvalidBetError("Choose a valid bet of at least $5 in $1 chips")
+        if self.bankroll < self.rules.minimum_bet:
+            raise InvalidBetError(f"Your ${self.bankroll} bankroll is below the ${self.rules.minimum_bet} minimum bet")
+        if not isinstance(bet_type, BetType) or type(amount) is not int or not self.rules.minimum_bet <= amount <= self.rules.maximum_single_wager:
+            raise InvalidBetError(f"Base wagers must be ${self.rules.minimum_bet}–${self.rules.maximum_single_wager}")
         if type(odds) is not int or odds < 0:
             raise InvalidBetError("Odds must be a nonnegative whole-dollar amount")
         needs_number = bet_type in (BetType.PLACE, BetType.HARDWAY)
@@ -37,7 +44,13 @@ class Player:
         if bet_type == BetType.PLACE:
             n, d = PLACE_PAYOUTS[number]
             if amount * n % d:
-                raise InvalidBetError(f"${amount} cannot pay exactly on Place {number}; choose a compatible wager")
+                increment = 6 if number in (6, 8) else 5
+                hint = " Add $1 to a $5 Place 6/8 wager to make $6." if increment == 6 else ""
+                raise InvalidBetError(f"Place {number} needs a ${increment} payout-compatible increment.{hint}")
+        if bet_type == BetType.HARDWAY:
+            n, d = HARDWAY_PAYOUTS[number]
+            if amount * n % d:
+                raise InvalidBetError(f"${amount} cannot pay exactly on Hard {number}")
         if bet_type in (BetType.PASS_LINE, BetType.DONT_PASS) and point is not None:
             raise InvalidBetError("Pass and Don't Pass bets are available on the come-out")
         if bet_type in (BetType.COME, BetType.DONT_COME) and point is None:
@@ -54,8 +67,10 @@ class Player:
         cost = amount + odds
         if cost > self.bankroll:
             raise InvalidBetError(f"Not enough funds: you have ${self.bankroll}")
-        if bet_type in (BetType.PASS_LINE, BetType.DONT_PASS) and any(b.bet_type == bet_type for b in self.active_bets):
-            raise InvalidBetError("That line wager is already active")
+        if any(b.bet_type == bet_type and b.number == number
+               for b in self.active_bets
+               if bet_type not in (BetType.COME, BetType.DONT_COME)):
+            raise InvalidBetError("That table area already has a wager; add chips to its stack")
         wager = Bet(bet_type, amount, number, odds, self._next_id)
         self._next_id += 1
         self.bankroll -= cost
@@ -96,6 +111,12 @@ class Player:
             n, d = PLACE_PAYOUTS[bet.number]
             if (bet.amount + amount) * n % d:
                 raise InvalidBetError(f"That chip would make the Place {bet.number} payout fractional")
+        if bet.bet_type.value == "hardway":
+            n, d = HARDWAY_PAYOUTS[bet.number]
+            if (bet.amount + amount) * n % d:
+                raise InvalidBetError(f"That chip would make the Hard {bet.number} payout fractional")
+        if bet.amount + amount > self.rules.maximum_single_wager:
+            raise InvalidBetError(f"Maximum base wager is ${self.rules.maximum_single_wager}")
         if bet.odds > (bet.amount + amount) * self.max_odds_multiplier:
             raise InvalidBetError("This increase would violate the maximum odds limit")
         self.bankroll -= amount
@@ -104,8 +125,15 @@ class Player:
     def reduce_wager(self, bet, amount):
         if not any(current is bet for current in self.active_bets):
             raise InvalidBetError("That wager is no longer active")
-        if type(amount) is not int or amount <= 0 or bet.amount - amount < MIN_BET:
+        if type(amount) is not int or amount <= 0 or bet.amount - amount < self.rules.minimum_bet:
             raise InvalidBetError("Cannot undo that chip without invalidating the wager")
+        remaining = bet.amount - amount
+        if bet.bet_type.value == "place":
+            n, d = PLACE_PAYOUTS[bet.number]
+            if remaining * n % d:
+                raise InvalidBetError(f"That reduction would make the Place {bet.number} payout fractional")
+        if bet.odds > remaining * self.max_odds_multiplier:
+            raise InvalidBetError("That reduction would exceed the maximum odds limit")
         bet.amount -= amount
         self.bankroll += amount
 
@@ -133,9 +161,9 @@ class Player:
                 self.active_bets.pop(active_index)
 
     def can_play(self):
-        return self.bankroll >= MIN_BET
+        return self.bankroll >= self.rules.minimum_bet
 
     def reset(self):
         self.active_bets.clear()
         self._settled_bets.clear()
-        self.bankroll = STARTING_BANKROLL
+        self.bankroll = self.rules.starting_bankroll

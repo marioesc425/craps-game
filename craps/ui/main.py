@@ -6,16 +6,20 @@ from craps.engine.dice import roll_dice
 from craps.engine.bets import BetType
 from craps.engine.game import CrapsEngine
 from craps.engine.player import Player, InvalidBetError
+from craps.engine.config import DEFAULT_TABLE_RULES
 from craps.ui.board import WINDOW_SIZE, DICE_AREA_CENTER, draw_board, draw_puck
 from craps.ui.betting import (ZONES, zone_at, wager_available, place_chip,
-                               odds_eligible, stack_at, stack_center, draw_chip_stacks)
+                               odds_eligible, stack_at, stack_center, draw_chip_stacks,
+                               draw_pending_stacks, WagerAccumulator)
 from craps.ui.dice_view import draw_die
 from craps.ui.hud import draw_hud, make_hud_fonts
+from craps.ui.viewport import viewport as calculate_viewport, design_position as to_design_position
 
 DIE_SIZE, ROLL_MS, TUMBLE_MS = 60, 800, 80
-CHIP_VALUES = (1, 5, 6, 25, 100, 500)
-CHIP_COLORS = ((245, 242, 226), (190, 50, 55), (24, 135, 126), (28, 130, 83), (35, 40, 47), (115, 67, 153))
-CHIP_X = (975, 1040, 1105, 1170, 1235, 1300)
+CHIP_VALUES = DEFAULT_TABLE_RULES.chip_denominations
+CHIP_COLORS = ((245, 242, 226), (190, 50, 55), (24, 135, 126), (28, 130, 83), (35, 40, 47))
+CHIP_LABELS = tuple(f"${value}" for value in CHIP_VALUES)
+CHIP_X = (1000, 1075, 1150, 1225, 1300)
 CHIP_Y = 208
 BG, GOLD, CREAM = (11, 22, 27), (226, 184, 92), (247, 238, 215)
 
@@ -28,11 +32,12 @@ hud_fonts = make_hud_fonts()
 small = pygame.font.SysFont("georgia", 15)
 chip_font = pygame.font.SysFont("georgia", 13, bold=True)
 status_font = pygame.font.SysFont("georgia", 17)
-chip_index = 1  # start with the conventional $5 chip
+chip_index = 0  # start with the $1 chip
 hover_position = None
 status_message = "Select a chip, click a table area, then roll."
 status_error = False
 undo_stack = []  # only actions since the last roll can be undone
+accumulator = WagerAccumulator()
 last_result = None
 dice_values = roll_dice()
 roll_started = final_dice = last_tumble_step = None
@@ -50,16 +55,11 @@ def set_status(message, error=False):
 
 
 def viewport():
-    scale = min(display.get_width() / WINDOW_SIZE[0], display.get_height() / WINDOW_SIZE[1])
-    size = (round(WINDOW_SIZE[0] * scale), round(WINDOW_SIZE[1] * scale))
-    offset = ((display.get_width() - size[0]) // 2, (display.get_height() - size[1]) // 2)
-    return scale, size, offset
+    return calculate_viewport(display.get_size(), WINDOW_SIZE)
 
 
 def design_position(position):
-    scale, _, offset = viewport()
-    return (round((position[0] - offset[0]) / scale),
-            round((position[1] - offset[1]) / scale))
+    return to_design_position(position, display.get_size(), WINDOW_SIZE)
 
 
 def do_undo():
@@ -68,7 +68,11 @@ def do_undo():
         return
     kind, bet, amount = undo_stack.pop()
     try:
-        if kind == "new":
+        if kind == "pending":
+            remaining = accumulator.undo_chip(bet, amount)
+            set_status(f"Staged chips removed; ${remaining} remains.")
+            return
+        elif kind == "new":
             player.undo_wager(bet)
         elif kind == "increase":
             player.reduce_wager(bet, amount)
@@ -103,6 +107,9 @@ def roll_dice_once():
     global roll_started, last_tumble_step, final_dice, last_result
     if roll_started is not None:
         return
+    if accumulator.pending:
+        set_status("Complete or undo the staged chips before rolling.", True)
+        return
     if not player.active_bets:
         set_status("Place at least one wager before rolling.", True)
         return
@@ -122,7 +129,7 @@ def draw_chip_tray(surface):
         pygame.draw.circle(surface, edge, (x, CHIP_Y), 18 if i == chip_index else 16, 3 if i == chip_index else 1)
         pygame.draw.circle(surface, edge, (x, CHIP_Y), 12, 1)
         ink = (28, 30, 29) if affordable and i == 0 else (255, 247, 225) if affordable else (158, 158, 151)
-        chip_text = chip_font.render(f"${value}", True, ink)
+        chip_text = chip_font.render(CHIP_LABELS[i], True, ink)
         surface.blit(chip_text, chip_text.get_rect(center=(x, CHIP_Y)))
         if hover_position and math.dist(hover_position, (x, CHIP_Y)) <= 20 and affordable:
             pygame.draw.circle(surface, (255, 250, 224), (x, CHIP_Y), 21, 2)
@@ -158,9 +165,10 @@ while running:
                 player.reset()
                 engine.reset()
                 undo_stack.clear()
+                accumulator.clear()
                 last_result = None
                 set_status("New game started.")
-            elif pygame.K_1 <= event.key <= pygame.K_6:
+            elif pygame.K_1 <= event.key <= pygame.K_5:
                 candidate = event.key - pygame.K_1
                 if CHIP_VALUES[candidate] <= player.bankroll:
                     chip_index = candidate
@@ -189,10 +197,17 @@ while running:
                 if zone is not None:
                     chip = CHIP_VALUES[chip_index]
                     try:
-                        bet, kind = place_chip(player, engine, zone, chip)
-                        undo_stack.append((kind, bet, chip))
-                        label = zone.name.replace("_", " ")
-                        set_status(f"${chip} on {label}.")
+                        bet, kind, amount = accumulator.add_chip(player, engine, zone, chip)
+                        if kind == "pending":
+                            undo_stack.append(("pending", zone, chip))
+                            staged_total = accumulator.amount_for(zone)
+                            needed = accumulator.amount_to_complete(player, zone)
+                            set_status(f"${staged_total} staged on {zone.label}; add ${needed} to complete.")
+                        else:
+                            undo_stack = [action for action in undo_stack
+                                          if not (action[0] == "pending" and action[1].name == zone.name)]
+                            undo_stack.append((kind, bet, amount))
+                            set_status(f"${amount} on {zone.label}.")
                     except InvalidBetError as exc:
                         set_status(str(exc), True)
     if roll_started is not None:
@@ -214,14 +229,18 @@ while running:
                 dice_values = roll_dice()
 
     screen.fill(BG)
-    draw_board(screen)
+    draw_board(screen, player.rules)
     draw_puck(screen, pygame.font.Font(None, 18), engine.point)
     current_zone = zone_at(hover_position) if hover_position else None
+    pending_total = accumulator.amount_for(current_zone) if current_zone else 0
+    reserved_elsewhere = sum(item.amount for item in accumulator.pending.values()) - pending_total
     if (current_zone and roll_started is None
-            and wager_available(player, engine, current_zone, CHIP_VALUES[chip_index])):
+            and wager_available(player, engine, current_zone, CHIP_VALUES[chip_index],
+                                pending_total, reserved_elsewhere)):
         current_zone.draw_highlight(screen)
     draw_chip_stacks(screen, player.active_bets, small)
-    draw_hud(screen, hud_fonts, player.bankroll, CHIP_VALUES[chip_index])
+    draw_pending_stacks(screen, accumulator, player.active_bets, small)
+    draw_hud(screen, hud_fonts, player.bankroll, CHIP_VALUES[chip_index], player.rules)
     for index, (rect, value) in enumerate(zip(rects, dice_values)):
         if roll_started is None:
             draw_die(screen, rect, value)
@@ -246,7 +265,8 @@ while running:
     hovered_undo = hover_position is not None and UNDO_RECT.collidepoint(hover_position)
     hovered_roll = hover_position is not None and ROLL_RECT.collidepoint(hover_position)
     draw_control(screen, UNDO_RECT, "UNDO CHIP  [Z]", bool(undo_stack), hovered_undo)
-    draw_control(screen, ROLL_RECT, "ROLL DICE  [SPACE]", bool(player.active_bets) and roll_started is None, hovered_roll)
+    draw_control(screen, ROLL_RECT, "ROLL DICE  [SPACE]",
+                 bool(player.active_bets) and not accumulator.pending and roll_started is None, hovered_roll)
     scale, viewport_size, offset = viewport()
     display.fill(BG)
     if viewport_size == WINDOW_SIZE:
