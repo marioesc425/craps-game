@@ -2,6 +2,8 @@
 
 A playable craps game built with Python and Pygame. The table is the interface: choose a chip, click a printed betting area, and roll. The project combines a rules and bankroll engine with a casino-style, responsive table UI.
 
+![The Golden Rail craps table interface](docs/images/craps-table.png)
+
 ## What it does
 
 - Implements Pass Line, Don't Pass, Come, Don't Come, Field, Place 4/5/6/8/9/10, Hard 4/6/8/10, and the printed proposition bets (Any Seven, Ace-Deuce, Aces, Boxcars, Yo, and Any Craps), plus odds on eligible line bets.
